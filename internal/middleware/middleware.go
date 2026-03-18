@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	rds "github.com/redis/go-redis/v9"
 )
 
 type contextKey string
@@ -104,6 +106,44 @@ func Recovery() Middleware {
 	}
 }
 
+func RateLimit(client *rds.Client, requestsPerMinute int, timeout time.Duration) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if client == nil || requestsPerMinute <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			operationCtx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+
+			minuteWindow := time.Now().UTC().Format("200601021504")
+			clientIP := requestIP(r.RemoteAddr)
+			key := fmt.Sprintf("ratelimit:%s:%s", clientIP, minuteWindow)
+
+			count, err := client.Incr(operationCtx, key).Result()
+			if err != nil {
+				log.Printf("rate limit check failed: %v", err)
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if count == 1 {
+				if expireErr := client.Expire(operationCtx, key, time.Minute).Err(); expireErr != nil {
+					log.Printf("rate limit expire set failed: %v", expireErr)
+				}
+			}
+
+			if count > int64(requestsPerMinute) {
+				writeJSONError(w, http.StatusTooManyRequests, "too many requests")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func GetRequestID(ctx context.Context) string {
 	value, ok := ctx.Value(RequestIDKey).(string)
 	if !ok {
@@ -151,4 +191,17 @@ func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, fmt.Sprintf("failed to encode json error: %v", err), http.StatusInternalServerError)
 	}
+}
+
+func requestIP(remoteAddress string) string {
+	host, _, err := net.SplitHostPort(remoteAddress)
+	if err != nil {
+		host = remoteAddress
+	}
+
+	if host == "" {
+		return "unknown"
+	}
+
+	return host
 }

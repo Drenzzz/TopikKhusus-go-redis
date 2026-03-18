@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -40,9 +41,24 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		writeError(w, http.StatusUnsupportedMediaType, "content type must be application/json")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var request models.CreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json payload")
+		return
+	}
+
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "request body must contain single json object")
 		return
 	}
 
