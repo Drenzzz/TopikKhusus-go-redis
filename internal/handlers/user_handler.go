@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,11 +26,12 @@ type errorResponse struct {
 }
 
 type UserHandler struct {
-	service services.UserService
+	service     services.UserService
+	healthCheck func(ctx context.Context) error
 }
 
-func NewUserHandler(service services.UserService) *UserHandler {
-	return &UserHandler{service: service}
+func NewUserHandler(service services.UserService, healthCheck func(ctx context.Context) error) *UserHandler {
+	return &UserHandler{service: service, healthCheck: healthCheck}
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +105,25 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	writeSuccess(w, http.StatusOK, map[string]string{"message": "user deleted"})
+}
+
+func (h *UserHandler) Health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.healthCheck == nil {
+		writeSuccess(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	if err := h.healthCheck(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "redis unavailable")
+		return
+	}
+
+	writeSuccess(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *UserHandler) handleServiceError(w http.ResponseWriter, err error) {
