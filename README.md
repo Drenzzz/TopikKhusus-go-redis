@@ -1,4 +1,4 @@
-# topikkhusus-methodtracker
+# go-redis
 
 ## 1. Project Overview
 This project is a production-oriented REST API built with Go and Redis. It provides user management endpoints and a method tracking system that logs every incoming HTTP request into Redis.
