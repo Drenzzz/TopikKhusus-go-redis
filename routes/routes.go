@@ -5,9 +5,10 @@ import (
 	"strings"
 
 	"topikkhusus-methodtracker/internal/handlers"
+	"topikkhusus-methodtracker/internal/middleware"
 )
 
-func Register(userHandler *handlers.UserHandler) http.Handler {
+func Register(userHandler *handlers.UserHandler, middlewares ...middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
@@ -40,5 +41,5 @@ func Register(userHandler *handlers.UserHandler) http.Handler {
 
 	mux.HandleFunc("/health", userHandler.Health)
 
-	return mux
+	return middleware.Chain(mux, middlewares...)
 }
