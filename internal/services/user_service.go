@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	"topikkhusus-methodtracker/internal/models"
 	"topikkhusus-methodtracker/internal/repository"
@@ -38,7 +42,22 @@ func (s *userService) CreateUser(ctx context.Context, request models.CreateUserR
 		return models.User{}, ErrInvalidInput
 	}
 
-	return models.User{}, fmt.Errorf("create user is not implemented")
+	if _, err := mail.ParseAddress(request.Email); err != nil {
+		return models.User{}, ErrInvalidInput
+	}
+
+	user := models.User{
+		ID:        uuid.NewString(),
+		Name:      request.Name,
+		Email:     request.Email,
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := s.repository.CreateUser(ctx, user); err != nil {
+		return models.User{}, fmt.Errorf("create user failed: %w", err)
+	}
+
+	return user, nil
 }
 
 func (s *userService) GetAllUsers(ctx context.Context) ([]models.User, error) {
@@ -58,6 +77,10 @@ func (s *userService) GetUserByID(ctx context.Context, id string) (models.User, 
 
 	user, err := s.repository.GetUserByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return models.User{}, ErrNotFound
+		}
+
 		return models.User{}, fmt.Errorf("get user by id failed: %w", err)
 	}
 
@@ -71,6 +94,10 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 	}
 
 	if err := s.repository.DeleteUser(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return ErrNotFound
+		}
+
 		return fmt.Errorf("delete user failed: %w", err)
 	}
 
